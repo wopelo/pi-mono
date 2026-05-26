@@ -224,16 +224,18 @@ export interface TextSignatureV1 {
 export interface TextContent {
 	type: "text";
 	text: string;
+	// 让上层代码能够区分一段文本是模型的"草稿思考"还是"正式回答"
 	textSignature?: string; // e.g., for OpenAI responses, message metadata (legacy id string or TextSignatureV1 JSON)
 }
 
 export interface ThinkingContent {
 	type: "thinking";
 	thinking: string;
-	thinkingSignature?: string; // e.g., for OpenAI responses, the reasoning item ID
-	/** When true, the thinking content was redacted by safety filters. The opaque
-	 *  encrypted payload is stored in `thinkingSignature` so it can be passed back
-	 *  to the API for multi-turn continuity. */
+	// 推理内容的标识符。对于 OpenAI responses API，它对应的是 reasoning item 的 ID，用于在多轮对话中关联推理上下文
+	thinkingSignature?: string;
+	// 为 true 时，表示该推理内容被安全过滤器审查或者屏蔽
+	// 此时，thinking 字段中不会包含真实的推理文本（已经被移除）
+	// 被屏蔽的原始内容以加密的不透明载荷形式存储在 thinkingSignature 中，在后续多轮对话中将加密载荷传回 API，保持对话连续性（即使内容被屏蔽，模型仍能通过这个签名感知上下文）
 	redacted?: boolean;
 }
 
@@ -248,7 +250,9 @@ export interface ToolCall {
 	id: string;
 	name: string;
 	arguments: Record<string, any>;
-	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
+	// thoughtSignature 是 Google 特定的字段。它存储一个不透明签名（opaque signature），用于在多轮对话中复用推理上下文
+	// Google 的 Gemini 模型在生成工具调用时，可能会先产生一段"思考"过程。当 API 返回工具调用时，会附带一个 `thoughtSignature`，如果你在后续请求中把这个签名传回去，模型就能跳过重复思考，直接复用之前的推理结果，从而节省 token 和延迟。
+	thoughtSignature?: string;
 }
 
 export interface Usage {
@@ -282,6 +286,8 @@ export interface AssistantMessage {
 	model: string;
 	responseModel?: string; // Concrete `chunk.model` when different from the requested `model` (e.g. OpenRouter `auto` -> `anthropic/...`)
 	responseId?: string; // Provider-specific response/message identifier when the upstream API exposes one
+	// 失败和恢复的诊断记录数组
+	// 在流式请求的生命周期中，如果发生了可恢复的错误（比如一次重试、流中断后重新连接等），这些事件会被记录到 `diagnostics` 数组中，随最终的 `AssistantMessage` 一起返回。
 	diagnostics?: AssistantMessageDiagnostic[]; // Redacted provider/runtime diagnostics for failures and recoveries.
 	usage: Usage;
 	stopReason: StopReason;
